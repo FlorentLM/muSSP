@@ -1,45 +1,38 @@
 #include <iostream>
 #include <fstream>
-#include <stdio.h>
 #include "Graph.h"
 #include <ctime>
-#include <numeric>
-#include <algorithm>
-#include <iostream>
 #include <string>
 #include <array>
 
 ///
 /// \brief init
-/// \param filename
+/// \param in
 /// \return
 ///
-Graph* init(std::string filename)
+Graph* init(std::istream &in)
 {
-    char pr_type[3]; ////problem type;
+    char pr_type[4]; ////problem type;
 
     std::vector<int> edge_tails, edge_heads;
     std::vector<double> edge_weights;
 
-    std::ifstream file(filename);
-
-    int n = 0, m = 0; ////no of nodes, no of arcs;
+    int n = 0, m = 0; //no of nodes, no of arcs;
     std::string line_inf;
-    std::getline(file, line_inf);
-    //cout << line << std::endl;
+    std::getline(in, line_inf);
+
     sscanf(line_inf.c_str(), "%*c %3s %d %d", pr_type, &n, &m);
 
     double en_weight = 0;
     double ex_weight = 0;
-    //getline(file, line_inf);
-    //cout << line << std::endl;
-    //sscanf(line_inf.c_str(), "%*c %4s %lf %lf", pr_type, &en_weight, &ex_weight);
 
     auto *resG = new Graph(n, m, 0, n - 1, en_weight, ex_weight);
     int edges = 0;
     int edge_id = 0;
     std::cout << "Parsing edges: " << std::endl;
-    for (std::string line; getline(file, line);) {
+
+    std::string line;
+    while (std::getline(in, line)) {
         switch (line[0]) {
             case 'c':                  /* skip lines with comments */
             case '\n':                 /* skip empty lines   */
@@ -75,9 +68,9 @@ Graph* init(std::string filename)
 ///        output the min-cost flow results
 /// \param resG
 /// \param path_set
-/// \param outfile_name
+/// \param outputstream
 ///
-void print_solution(Graph* resG, std::vector<std::vector<int>> path_set, const char *outfile_name)
+void print_solution(Graph* resG, const std::vector<std::vector<int>>& path_set, std::ostream &outputstream)
 {
     std::vector<bool> edge_visited_flag(resG->num_edges_);
     for (size_t i = 0; i < path_set.size(); i++) {
@@ -88,14 +81,16 @@ void print_solution(Graph* resG, std::vector<std::vector<int>> path_set, const c
             edge_visited_flag[edge_idx] = !edge_visited_flag[edge_idx];
         }
     }
-    FILE *fp = fopen(outfile_name, "w");
-    for (int i = 0; i < resG->num_edges_; i++) {
-        if (edge_visited_flag[i])
-            fprintf(fp, "f %d %d 1\n", resG->edge_tail_head[i].first + 1, resG->edge_tail_head[i].second + 1);
-        else
-            fprintf(fp, "f %d %d 0\n", resG->edge_tail_head[i].first + 1, resG->edge_tail_head[i].second + 1);
+
+    outputstream << "path,tail,head\n";
+    int total_paths = (int) path_set.size();
+    for (int i = 0; i < total_paths; i++) {
+        for (size_t j = 0; j < path_set[i].size() - 1; j++) {
+            int tail = path_set[i][j];
+            int head = path_set[i][j+1];
+            outputstream << i << "," << tail << "," << head << "\n";
+        }
     }
-    fclose(fp);
 }
 
 ///
@@ -106,11 +101,21 @@ void print_solution(Graph* resG, std::vector<std::vector<int>> path_set, const c
 ///
 int main(int argc, char *argv[])
 {
+    std::unique_ptr<Graph> org_graph;
+    if (argc > 1) {
+        std::ifstream fin(argv[1]);
+        if (!fin) {
+            std::cerr << "Error opening input file: " << argv[1] << "\n";
+            return 1;
+        }
+        org_graph.reset(init(fin));
+    }
+    else {
+        org_graph.reset(init(std::cin));
+    }
+
     //// reading data
     clock_t t_start = clock();
-
-    std::string inFileName = (argc > 1) ? argv[1] : "/home/congchao/Desktop/dev/muSSP/input_117982_193870.txt";
-    std::unique_ptr<Graph> org_graph = std::unique_ptr<Graph>(init(inFileName));
     clock_t t_end = clock();
     long double parsing_time = t_end - t_start;
 
@@ -227,38 +232,32 @@ int main(int argc, char *argv[])
     }
     std::cout << "The overall time is " << all_cpu_time / 1000.0 << " s\n\n";
 
-    //// start validation
-    if (false) {
-        double cost_sum = 0, cost_sum_recalculate = 0;
-        for (auto &&i : path_cost) {
-            cost_sum += i;
-        }
-        for (auto &&tmpPath:path_set) {
-            double tmp_path_cost = 0;
-            for (size_t j = 0; j < tmpPath.size() - 1; j++) {
-                int tmp_edge_id = org_graph->node_id2edge_id[Graph::node_key(tmpPath[j + 1], tmpPath[j])];
-                tmp_path_cost += org_graph->edge_org_weights[tmp_edge_id];
-                org_graph->edge_org_weights[tmp_edge_id] *= -1;
-            }
-            cost_sum_recalculate += tmp_path_cost;
-        }
-        unsigned long total_upt_node_num = 0;
-        for (auto &&i : update_node_num) {
-            total_upt_node_num += i;
-        }
-        printf("The number of paths: %ld, total cost is %.7f, real-cost %.7f, final cost is: %.7f.\n",
-               path_cost.size(), cost_sum, cost_sum_recalculate, path_cost[path_cost.size() - 1]);
-    }
     double cost_sum = 0;
     for (auto &&i : path_cost) {
         cost_sum += i;
     }
-    printf("The number of paths: %ld, total cost is %.7f, final path cost is: %.7f.\n",
+    printf("Number of paths: %ld, total cost is %.7f, final path cost is: %.7f.\n",
            path_cost.size(), cost_sum, path_cost[path_cost.size() - 1]);
 
-    /*********write detailed flow to txt********/
-    if (argc > 3) {
-        print_solution(org_graph.get(), path_set, "output.txt");//"output_edge_rm.txt"
+    for (int i = 0; i < path_set.size(); i++) {
+        std::cout << "  Path #" << i << " length: " << path_set[i].size() << std::endl;
     }
+
+    /********* write paths to csv ********/
+    if (argc == 3) {
+        std::string outputFileName = argv[2];
+        std::ofstream fout(outputFileName);
+        if (!fout) {
+            std::cerr << "Error opening output file: " << outputFileName << "\n";
+            return 1;
+        }
+        print_solution(org_graph.get(), path_set, fout);
+        fout.close();
+    } else {
+        std::cout << "\nSolution:\n" << std::endl;
+
+        print_solution(org_graph.get(), path_set, std::cout);
+    }
+
     return 0;
 }
